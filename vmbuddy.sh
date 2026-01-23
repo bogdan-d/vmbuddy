@@ -33,6 +33,7 @@ Options:
 	--ram/-r:			RAM to be allocated to the virtual machine (i.e. 8G, 400M)
 	--cpu/-c:			Virtual CPUs to be allocated to the virtual machine (i.e. 8)
 	--iso/-i:			ISO file to be mounted (and booted) to the virtual machine (/path/to/iso)
+	--audio-type/--audio:			Type of audio device to be allocated to the VM (ich9/none)
 	--dry-run/-d:			Only print the QEMU command generated
 	--verbose/--debug/-v:		Show more verbosity
 	--version:			Show version
@@ -45,6 +46,7 @@ QEMU_RUNNER_BINARY="${QEMU_RUNNER_BINARY:-}"
 QEMU_RUNNER_UEFI_BINARY="${QEMU_RUNNER_UEFI_BINARY:-}"
 QEMU_RUNNER_CPUS="${QEMU_RUNNER_CPUS:-$(($(nproc) / 2))}"
 QEMU_RUNNER_RAM="${QEMU_RUNNER_RAM:-4G}"
+QEMU_RUNNER_AUDIO_TYPE="${QEMU_RUNNER_AUDIO_TYPE:-ich9}"
 QEMU_RUNNER_ACCELERATION_TYPE="${QEMU_RUNNER_ACCELERATION_TYPE:-venus}"
 QEMU_RUNNER_DISPLAY_TYPE="${QEMU_RUNNER_DISPLAY_TYPE:-gtk}"
 QEMU_RUNNER_DRY_RUN="${QEMU_RUNNER_DRY_RUN:-0}"
@@ -88,6 +90,15 @@ while :; do
     -m | --machine | --machine-type)
       if [ -n "$2" ]; then
         QEMU_RUNNER_MACHINE_TYPE="${2}"
+        shift
+        shift
+      else
+        invalid_args_die
+      fi
+      ;;
+    --audio | --audio-type)
+      if [ -n "$2" ]; then
+        QEMU_RUNNER_AUDIO_TYPE="${2}"
         shift
         shift
       else
@@ -184,6 +195,9 @@ if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "virgl" ] ; then
   )
 fi
 
+SANDBOX_ARGUMENTS=(
+  "-sandbox" "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"
+)
 if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "venus" ] ; then
   VENUS_ARGUMENTS=(
     "-display" "${QEMU_RUNNER_DISPLAY_TYPE:-gtk},gl=on,show-cursor=off"
@@ -192,6 +206,7 @@ if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "venus" ] ; then
     "-device" "virtio-vga-gl,hostmem=${QEMU_RUNNER_RAM},blob=true,venus=true"
     "-vga" "none"
   )
+  SANDBOX_ARGUMENTS=()
 fi
 
 if [ "${QEMU_RUNNER_DRY_RUN}" == "1" ] ; then
@@ -209,6 +224,15 @@ if [ -n "${QEMU_RUNNER_IMAGE_FILE}" ] ; then
   IMAGE_FILE_ARGUMENTS=("-drive" "file=${QEMU_RUNNER_IMAGE_FILE},format=${QEMU_RUNNER_IMAGE_FILE##*.},if=virtio")
 fi
 
+if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
+  AUDIO_ARGUMENTS=(
+    "-device" "ich9-intel-hda,id=sound0,bus=pcie.0,addr=0x1b"
+    "-device" "hda-duplex,id=sound0-codec0,bus=sound0.0,cad=0"
+    "-global" "ICH9-LPC.disable_s3=1"
+    "-global" "ICH9-LPC.disable_s4=1"
+    "-global" "ICH9-LPC.noreboot=off"
+  )
+fi
 
 MACHINE_ARGUMENTS=(
   "-machine" "q35,accel=kvm:tcg"
@@ -223,15 +247,20 @@ fi
 
 ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -enable-kvm \
+  -cpu host \
   -usb -device usb-tablet \
+  -rtc base=utc,driftfix=slew \
   -m "${QEMU_RUNNER_RAM}" \
   -smp "${QEMU_RUNNER_CPUS}" \
   -net user \
-  -cpu host \
+  -object qom-type=rng-random,id=objrng0,filename=/dev/urandom \
   -net nic,model=virtio \
+  "${AUDIO_ARGUMENTS[@]}" \
   "${MACHINE_ARGUMENTS[@]}" \
   "${DISPLAY_ARGUMENTS[@]}" \
   "${VIRGL_ARGUMENTS[@]}" \
   "${VENUS_ARGUMENTS[@]}" \
   "${ISO_FILE_ARGUMENTS[@]}" \
-  "${IMAGE_FILE_ARGUMENTS[@]}"
+  "${IMAGE_FILE_ARGUMENTS[@]}" \
+  "${SANDBOX_ARGUMENTS[@]}"
+
