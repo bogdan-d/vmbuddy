@@ -2,9 +2,12 @@
 
 QEMU wrapper written in Bash with sensible defaults
 
-```
+```bash
 vmbuddy /path/to/disk-image
 ```
+<img width="3440" height="1440" alt="image" src="https://github.com/user-attachments/assets/c0e22aa0-6136-4b6c-a5dc-5b3c42de6cc6" />
+
+
 
 This will autodetect a valid QEMU binary on your system and launch a VM for you with Venus, UEFI and other
 virtualization goodies
