@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VMBUDDY_VERSION="0.1.0"
+VMBUDDY_VERSION="0.1.1"
 VMBUDDY_BINARY_NAME="vmbuddy"
 
 set -eo pipefail
@@ -29,12 +29,12 @@ Options:
 	--uefi-binary/-u:		QEMU UEFI binary to be used (i.e.: /path/to/edk2)
 	--machine-type/--machine/-m:	Firmware used to boot the virtual machine (uefi/bios)
 	--acceleration-type/--accel/-a:	Method for GPU acceleration on the virtual machine (venus/virgl/none)
-	--display:			QEMU display type (sdl/gtk/console)
+	--display/-d:			QEMU display type (sdl/gtk/console)
 	--ram/-r:			RAM to be allocated to the virtual machine (i.e. 8G, 400M)
 	--cpu/-c:			Virtual CPUs to be allocated to the virtual machine (i.e. 8)
 	--iso/-i:			ISO file to be mounted (and booted) to the virtual machine (/path/to/iso)
 	--audio-type/--audio:		Type of audio device to be allocated to the VM (pulseaudio/ich9/none)
-	--dry-run/-d:			Only print the QEMU command generated
+	--dry-run:			Only print the QEMU command generated
 	--flatpak/-f:			Run with QEMU flatpak
 	--verbose/--debug/-v:		Show more verbosity
 	--version:			Show version
@@ -52,6 +52,7 @@ QEMU_RUNNER_ACCELERATION_TYPE="${QEMU_RUNNER_ACCELERATION_TYPE:-venus}"
 QEMU_RUNNER_DISPLAY_TYPE="${QEMU_RUNNER_DISPLAY_TYPE:-gtk}"
 QEMU_RUNNER_DRY_RUN="${QEMU_RUNNER_DRY_RUN:-0}"
 QEMU_RUNNER_MACHINE_TYPE="${QEMU_RUNNER_MACHINE_TYPE:-uefi}"
+QEMU_EXTRA_ARGS="${QEMU_EXTRA_ARGS:-}"
 QEMU_RUNNER_ISO_FILE="${QEMU_RUNNER_ISO_FILE:-}"
 QEMU_RUNNER_IMAGE_FILE="${QEMU_RUNNER_IMAGE_FILE:-}"
 
@@ -120,7 +121,7 @@ while :; do
         invalid_args_die
       fi
       ;;
-    --display)
+    -d | --display)
       if [ -n "$2" ]; then
         QEMU_RUNNER_DISPLAY_TYPE="${2}"
         shift
@@ -158,7 +159,7 @@ while :; do
       show_help
       exit 0
       ;;
-    -d | --dry-run)
+    --dry-run)
       shift
       QEMU_RUNNER_DRY_RUN="1"
       ;;
@@ -172,6 +173,7 @@ while :; do
       ;;
   	--)
       shift
+      QEMU_EXTRA_ARGS="$*"
       break
       ;;
     -*)
@@ -265,7 +267,8 @@ fi
 ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -enable-kvm \
   -cpu host \
-  -usb -device usb-tablet \
+  -device driver=qemu-xhci \
+  -device usb-tablet \
   -rtc base=utc,driftfix=slew \
   -m "${QEMU_RUNNER_RAM}" \
   -smp "${QEMU_RUNNER_CPUS}" \
@@ -279,5 +282,6 @@ ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   "${VENUS_ARGUMENTS[@]}" \
   "${ISO_FILE_ARGUMENTS[@]}" \
   "${IMAGE_FILE_ARGUMENTS[@]}" \
-  "${SANDBOX_ARGUMENTS[@]}"
+  "${SANDBOX_ARGUMENTS[@]}" \
+  ${QEMU_EXTRA_ARGS}
 
