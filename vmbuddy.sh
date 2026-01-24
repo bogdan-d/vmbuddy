@@ -33,8 +33,9 @@ Options:
 	--ram/-r:			RAM to be allocated to the virtual machine (i.e. 8G, 400M)
 	--cpu/-c:			Virtual CPUs to be allocated to the virtual machine (i.e. 8)
 	--iso/-i:			ISO file to be mounted (and booted) to the virtual machine (/path/to/iso)
-	--audio-type/--audio:			Type of audio device to be allocated to the VM (ich9/none)
+	--audio-type/--audio:		Type of audio device to be allocated to the VM (ich9/none)
 	--dry-run/-d:			Only print the QEMU command generated
+	--flatpak/-f:			Run with QEMU flatpak
 	--verbose/--debug/-v:		Show more verbosity
 	--version:			Show version
 	--help/-h:			Show this help
@@ -69,6 +70,11 @@ fi
 
 while :; do
   case $1 in
+    -f | --flatpak)
+      shift
+      QEMU_RUNNER_BINARY="flatpak run --command=qemu-system-$(arch) org.virt_manager.virt-manager"
+      QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-$(arch)-code.fd"
+      ;;
     -b | --binary)
       if [ -n "$2" ]; then
         QEMU_RUNNER_BINARY="${2}"
