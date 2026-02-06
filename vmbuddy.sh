@@ -249,7 +249,8 @@ if [ -n "${QEMU_RUNNER_ISO_FILE}" ] ; then
 fi
 
 if [ -n "${QEMU_RUNNER_IMAGE_FILE}" ] ; then
-  IMAGE_FILE_ARGUMENTS=("-drive" "file=${QEMU_RUNNER_IMAGE_FILE},format=${QEMU_RUNNER_IMAGE_FILE##*.},if=virtio")
+  FILETYPE="$(sed "s/img/raw/g" <<< "${QEMU_RUNNER_IMAGE_FILE##*.}")"
+  IMAGE_FILE_ARGUMENTS=("-drive" "file=${QEMU_RUNNER_IMAGE_FILE},format=${FILETYPE},if=virtio")
 fi
 
 if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
