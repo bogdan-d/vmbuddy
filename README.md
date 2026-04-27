@@ -45,3 +45,7 @@ curl -fsSL "https://raw.githubusercontent.com/tulilirockz/vmbuddy/refs/heads/mai
 ```
 
 Make sure that the script was properly fetched and has the expected contents by examining the installed script on `${HOME}/.local/bin/vmbuddy` or wherever else you've installed it to.
+
+## Final note
+
+This is maintained and used primarily on x86_64, virtualizing other x86_64 systems. A few things may not work well when _not_ on those architectures right now. Please make bug reports for those!
