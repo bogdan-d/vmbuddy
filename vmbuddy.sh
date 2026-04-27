@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-VMBUDDY_VERSION="0.1.1"
 VMBUDDY_BINARY_NAME="vmbuddy"
 
 set -eo pipefail
@@ -27,8 +26,6 @@ invalid_args_check() {
 show_help()
 {
 	cat <<EOF
-vmbuddy version: ${VMBUDDY_VERSION}
-
 Usage:
 
 	${VMBUDDY_BINARY_NAME}
@@ -50,14 +47,28 @@ Options:
 	--audio-type/--audio:		Type of audio device to be allocated to the VM (pulseaudio/ich9/none)
 	--dry-run:			Only print the QEMU command generated
 	--flatpak/-f:			Run with QEMU flatpak
+	--tpm/-t:			Launch with TPM2 software emulation
+	--tpm-swtpm-binary:			Binary to be used for swtpm (i.e.: swtpm)
+	--tpm-swtpm-setup-binary:			Binary to be used for swtpm_setup (i.e.: swtpm_setup)
+	--tpm-state-dir:			Directory to be used to store TPM2 state (default: ${XDG_DATA_DIR:-${HOME}/.local/share}/vmbuddy/tpmstate)
 	--verbose/--debug/-v:		Show more verbosity
 	--version:			Show version
 	--help/-h:			Show this help
 EOF
 }
 
-VMBUDDY_AUTODETECT_QEMU="${VMBUDDY_AUTODETECT_QEMU:-1}"
-QEMU_RUNNER_BINARY="${QEMU_RUNNER_BINARY:-}"
+system_or_fallback() {
+  BINARY_TO_CHECK=$1
+  FALLBACK_BINARY=$2
+  shift
+  shift
+  if [ "$VMBUDDY_AUTODETECT_QEMU" == "1" ] && command -v "$BINARY_TO_CHECK" &>/dev/null ; then
+    echo "$BINARY_TO_CHECK"
+    return
+  fi
+  echo "$FALLBACK_BINARY"
+}
+
 QEMU_RUNNER_UEFI_BINARY="${QEMU_RUNNER_UEFI_BINARY:-}"
 QEMU_RUNNER_CPUS="${QEMU_RUNNER_CPUS:-$(($(nproc) / 2))}"
 QEMU_RUNNER_RAM="${QEMU_RUNNER_RAM:-4G}"
@@ -69,18 +80,18 @@ QEMU_RUNNER_MACHINE_TYPE="${QEMU_RUNNER_MACHINE_TYPE:-uefi}"
 QEMU_EXTRA_ARGS="${QEMU_EXTRA_ARGS:-}"
 QEMU_RUNNER_ISO_FILE="${QEMU_RUNNER_ISO_FILE:-}"
 QEMU_RUNNER_IMAGE_FILE="${QEMU_RUNNER_IMAGE_FILE:-}"
+VMBUDDY_AUTODETECT_QEMU="${VMBUDDY_AUTODETECT_QEMU:-1}"
+QEMU_RUNNER_BINARY="${QEMU_RUNNER_BINARY:-$(system_or_fallback "qemu-system-$(arch)" "flatpak run --command=qemu-system-$(arch) org.virt_manager.virt-manager")}"
+QEMU_RUNNER_TPM2="${QEMU_RUNNER_TPM2:-}"
+QEMU_RUNNER_TPM_STATE_DIR="${QEMU_RUNNER_TPM_STATE_DIR:-${XDG_DATA_DIR:-$HOME/.local/share}/vmbuddy/tpmstate}"
+QEMU_RUNNER_SWTPM_BINARY="${QEMU_RUNNER_SWTPM_BINARY:-$(system_or_fallback "swtpm" "flatpak run --command=swtpm org.virt_manager.virt-manager")}"
+QEMU_RUNNER_SWTPM_SETUP_BINARY="${QEMU_RUNNER_SWTPM_SETUP_BINARY:-$(system_or_fallback "swtpm_setup" "flatpak run --command=swtpm_setup org.virt_manager.virt-manager")}"
 
-if [ -z "${QEMU_RUNNER_BINARY}" ]; then
-  # We want to use flathub whenever possible, but if the system stack is available then use that
-  if [ "${VMBUDDY_AUTODETECT_QEMU}" == "1" ] && command -v "qemu-system-$(arch)" &>/dev/null ; then
-    QEMU_RUNNER_BINARY="qemu-system-$(arch)"
-    if [ -e "/usr/share/edk2/ovmf/OVMF_CODE_4M.qcow2" ] ; then
-      QEMU_RUNNER_UEFI_BINARY="/usr/share/edk2/ovmf/OVMF_CODE_4M.qcow2"
-    fi
-  else
-    QEMU_RUNNER_BINARY="flatpak run --command=qemu-system-$(arch) org.virt_manager.virt-manager"
-    QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-$(arch)-code.fd"
-  fi
+# We want to use flathub whenever possible, but if the system stack is available then use that
+if [ "${VMBUDDY_AUTODETECT_QEMU}" == "1" ] && command -v "qemu-system-$(arch)" &>/dev/null && [ -e "/usr/share/edk2/ovmf/OVMF_CODE_4M.qcow2" ] ; then
+  QEMU_RUNNER_UEFI_BINARY="/usr/share/edk2/ovmf/OVMF_CODE_4M.qcow2"
+else
+  QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-$(arch)-code.fd"
 fi
 
 while :; do
@@ -89,6 +100,37 @@ while :; do
       shift
       QEMU_RUNNER_BINARY="flatpak run --command=qemu-system-$(arch) org.virt_manager.virt-manager"
       QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-$(arch)-code.fd"
+      ;;
+    -t | --tpm)
+      shift
+      QEMU_RUNNER_TPM2="1"
+      ;;
+    --tpm-swtpm-binary)
+      if [ -n "$2" ]; then
+        QEMU_RUNNER_SWTPM_BINARY="${2}"
+        shift
+        shift
+      else
+        invalid_args_die
+      fi
+      ;;
+    --tpm-swtpm-setup-binary)
+      if [ -n "$2" ]; then
+        QEMU_RUNNER_SWTPM_SETUP_BINARY="${2}"
+        shift
+        shift
+      else
+        invalid_args_die
+      fi
+      ;;
+    --tpm-state-dir)
+      if [ -n "$2" ]; then
+        QEMU_RUNNER_TPM_STATE_DIR="${2}"
+        shift
+        shift
+      else
+        invalid_args_die
+      fi
       ;;
     -b | --binary)
       if [ -n "$2" ]; then
@@ -187,10 +229,6 @@ while :; do
       set -x
       shift
       ;;
-    --version)
-      printf "${VMBUDDY_BINARY_NAME}: %s\n" "${VMBUDDY_VERSION}"
-      exit 0
-      ;;
   	--)
       shift
       QEMU_EXTRA_ARGS="$*"
@@ -241,6 +279,39 @@ if [ "${QEMU_RUNNER_DRY_RUN}" == "1" ] ; then
   DRY_RUN_ARGUMENTS=("echo")
 fi
 
+if [ "${QEMU_RUNNER_TPM2}" == "1" ] ; then
+  pkill swtpm || true
+  pkill swtpm_setup || true
+
+  mkdir -p "${QEMU_RUNNER_TPM_STATE_DIR}"
+  if ! ${QEMU_RUNNER_SWTPM_SETUP_BINARY} --tpmstate "${QEMU_RUNNER_TPM_STATE_DIR}" \
+    --create-ek-cert \
+    --create-platform-cert \
+    --create-spk \
+    --tpm2 \
+    --overwrite ; then
+    echo "Failed setting up TPM state, setting to temporary directory."
+    QEMU_RUNNER_TPM_STATE_DIR="$(mktemp -d)"
+    ${QEMU_RUNNER_SWTPM_SETUP_BINARY} --tpmstate "${QEMU_RUNNER_TPM_STATE_DIR}" \
+      --create-ek-cert \
+      --create-platform-cert \
+      --create-spk \
+      --tpm2 \
+      --overwrite
+  fi
+
+  ${QEMU_RUNNER_SWTPM_BINARY} socket --tpmstate "dir=${QEMU_RUNNER_TPM_STATE_DIR}" \
+    --ctrl type=unixio,path="${QEMU_RUNNER_TPM_STATE_DIR}/swtpm-sock" \
+    --tpm2 \
+    --log level=20 &>/dev/null &
+
+  TPM2_ARGUMENTS=(
+    "-chardev" "socket,id=chrtpm,path=${QEMU_RUNNER_TPM_STATE_DIR}/swtpm-sock"
+    "-tpmdev" "emulator,id=tpm0,chardev=chrtpm"
+    "-device" "tpm-tis,tpmdev=tpm0"
+  )
+fi
+
 if [ -n "${QEMU_RUNNER_ISO_FILE}" ] ; then
   ISO_FILE_ARGUMENTS=(
      "-boot" "d"
@@ -285,7 +356,7 @@ if [ "${QEMU_RUNNER_MACHINE_TYPE}" == "uefi" ] ; then
 fi
 
 
-${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
+exec ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -enable-kvm \
   -cpu host \
   -device driver=qemu-xhci \
@@ -296,6 +367,7 @@ ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -net user \
   -object qom-type=rng-random,id=objrng0,filename=/dev/urandom \
   -net nic,model=virtio \
+  "${TPM2_ARGUMENTS[@]}" \
   "${AUDIO_ARGUMENTS[@]}" \
   "${MACHINE_ARGUMENTS[@]}" \
   "${DISPLAY_ARGUMENTS[@]}" \
