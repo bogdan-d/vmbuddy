@@ -40,11 +40,11 @@ Options:
 	--uefi-binary/-u:		QEMU UEFI binary to be used (i.e.: /path/to/edk2)
 	--machine-type/--machine/-m:	Firmware used to boot the virtual machine (uefi/bios)
 	--acceleration-type/--accel/-a:	Method for GPU acceleration on the virtual machine (native-drm/venus/virgl/none)
-	--display/-d:			QEMU display type (sdl/gtk/console)
+	--display/-d:			QEMU display type (sdl/gtk/curses)
 	--ram/-r:			RAM to be allocated to the virtual machine (i.e. 8G, 400M)
 	--cpu/-c:			Virtual CPUs to be allocated to the virtual machine (i.e. 8)
 	--iso/-i:			ISO file to be mounted (and booted) to the virtual machine (/path/to/iso)
-	--audio-type/--audio:		Type of audio device to be allocated to the VM (pulseaudio/ich9/none)
+	--audio-type/--audio:		Type of audio device to be allocated to the VM (pipewire/pulseaudio/ich9/none)
 	--dry-run:			Only print the QEMU command generated
 	--flatpak/-f:			Run with QEMU flatpak
 	--tpm/-t:			Launch with TPM2 software emulation
@@ -72,7 +72,7 @@ system_or_fallback() {
 QEMU_RUNNER_UEFI_BINARY="${QEMU_RUNNER_UEFI_BINARY:-}"
 QEMU_RUNNER_CPUS="${QEMU_RUNNER_CPUS:-$(($(nproc) / 2))}"
 QEMU_RUNNER_RAM="${QEMU_RUNNER_RAM:-4G}"
-QEMU_RUNNER_AUDIO_TYPE="${QEMU_RUNNER_AUDIO_TYPE:-pulseaudio}"
+QEMU_RUNNER_AUDIO_TYPE="${QEMU_RUNNER_AUDIO_TYPE:-pipewire}"
 QEMU_RUNNER_ACCELERATION_TYPE="${QEMU_RUNNER_ACCELERATION_TYPE:-"native-drm"}"
 QEMU_RUNNER_DISPLAY_TYPE="${QEMU_RUNNER_DISPLAY_TYPE:-gtk}"
 QEMU_RUNNER_DRY_RUN="${QEMU_RUNNER_DRY_RUN:-0}"
@@ -165,7 +165,7 @@ while :; do
     --audio | --audio-type)
       if [ -n "$2" ]; then
         QEMU_RUNNER_AUDIO_TYPE="${2}"
-        invalid_args_check "${2}" "pulseaudio" "ich9"
+        invalid_args_check "${2}" "pipewire" "pulseaudio" "ich9" "none"
         shift
         shift
       else
@@ -327,7 +327,11 @@ fi
 
 if [ -n "${QEMU_RUNNER_IMAGE_FILE}" ] ; then
   FILETYPE="$(sed "s/img/raw/g" <<< "${QEMU_RUNNER_IMAGE_FILE##*.}")"
-  IMAGE_FILE_ARGUMENTS=("-drive" "file=${QEMU_RUNNER_IMAGE_FILE},format=${FILETYPE},if=virtio")
+  IMAGE_FILE_ARGUMENTS=(
+    "-device" "virtio-scsi-pci,id=scsi"
+    "-device" "scsi-hd,drive=hd"
+    "-drive" "if=none,id=hd,file=${QEMU_RUNNER_IMAGE_FILE},media=disk,snapshot=off,format=${FILETYPE}"
+  )
 fi
 
 if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
@@ -340,19 +344,21 @@ if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
   )
 fi
 
+
+if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "pipewire" ] ; then
+  AUDIO_ARGUMENTS=(
+    "-audio" "driver=pipewire,id=snd0,model=virtio"
+  )
+fi
+
 if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "pulseaudio" ] ; then
   AUDIO_ARGUMENTS=(
-    "-audiodev" "pa,id=snd0,server=unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse/native"
-    "-device" "ich9-intel-hda,id=sound0,bus=pcie.0,addr=0x1b"
-    "-device" "hda-duplex,id=sound0-codec0,audiodev=snd0"
-    "-global" "ICH9-LPC.disable_s3=1"
-    "-global" "ICH9-LPC.disable_s4=1"
-    "-global" "ICH9-LPC.noreboot=off"
+    "-audio" "driver=pa,model=virtio,server=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse/native"
   )
 fi
 
 MACHINE_ARGUMENTS=(
-  "-machine" "q35,accel=kvm:tcg"
+  "-machine" "q35,accel=kvm:tcg,smm=on,hpet=off"
 )
 if [ "${QEMU_RUNNER_MACHINE_TYPE}" == "uefi" ] ; then
   MACHINE_ARGUMENTS=(
@@ -371,8 +377,11 @@ exec ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -m "${QEMU_RUNNER_RAM}" \
   -smp "${QEMU_RUNNER_CPUS}" \
   -net user \
-  -object qom-type=rng-random,id=objrng0,filename=/dev/urandom \
   -net nic,model=virtio \
+  -device "vmgenid,guid=$(uuidgen)" \
+  -object rng-random,filename=/dev/urandom,id=rng0 \
+  -device virtio-rng-pci,rng=rng0,id=rng-device0 \
+  -device virtio-balloon,free-page-reporting=on \
   "${TPM2_ARGUMENTS[@]}" \
   "${AUDIO_ARGUMENTS[@]}" \
   "${MACHINE_ARGUMENTS[@]}" \
@@ -383,4 +392,3 @@ exec ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   "${IMAGE_FILE_ARGUMENTS[@]}" \
   "${SANDBOX_ARGUMENTS[@]}" \
   ${QEMU_EXTRA_ARGS}
-
