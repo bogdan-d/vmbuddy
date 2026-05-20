@@ -29,7 +29,7 @@ show_help()
 Usage:
 
 	${VMBUDDY_BINARY_NAME}
-	${VMBUDDY_BINARY_NAME} /path/to/image
+	${VMBUDDY_BINARY_NAME} [IMAGE...]
 	${VMBUDDY_BINARY_NAME} --iso /path/to/iso /path/to/image
 	${VMBUDDY_BINARY_NAME} --cpu 8 --ram 16G /path/to/image
 	${VMBUDDY_BINARY_NAME} --accel native-drm --iso /path/to/iso
@@ -48,9 +48,9 @@ Options:
 	--dry-run:			Only print the QEMU command generated
 	--flatpak/-f:			Run with QEMU flatpak
 	--tpm/-t:			Launch with TPM2 software emulation
-	--tpm-swtpm-binary:			Binary to be used for swtpm (i.e.: swtpm)
-	--tpm-swtpm-setup-binary:			Binary to be used for swtpm_setup (i.e.: swtpm_setup)
-	--tpm-state-dir:			Directory to be used to store TPM2 state (default: ${XDG_DATA_DIR:-${HOME}/.local/share}/vmbuddy/tpmstate)
+	--tpm-swtpm-binary:		Binary to be used for swtpm (i.e.: swtpm)
+	--tpm-swtpm-setup-binary:	Binary to be used for swtpm_setup (i.e.: swtpm_setup)
+	--tpm-state-dir:		Directory to be used to store TPM2 state (default: ${XDG_DATA_DIR:-${HOME}/.local/share}/vmbuddy/tpmstate)
 	--verbose/--debug/-v:		Show more verbosity
 	--version:			Show version
 	--help/-h:			Show this help
@@ -79,7 +79,7 @@ QEMU_RUNNER_DRY_RUN="${QEMU_RUNNER_DRY_RUN:-0}"
 QEMU_RUNNER_MACHINE_TYPE="${QEMU_RUNNER_MACHINE_TYPE:-uefi}"
 QEMU_EXTRA_ARGS="${QEMU_EXTRA_ARGS:-}"
 QEMU_RUNNER_ISO_FILE="${QEMU_RUNNER_ISO_FILE:-}"
-QEMU_RUNNER_IMAGE_FILE="${QEMU_RUNNER_IMAGE_FILE:-}"
+QEMU_RUNNER_IMAGE_FILES=( ${QEMU_RUNNER_IMAGE_FILES} )
 VMBUDDY_AUTODETECT_QEMU="${VMBUDDY_AUTODETECT_QEMU:-1}"
 QEMU_RUNNER_BINARY="${QEMU_RUNNER_BINARY:-$(system_or_fallback "qemu-system-$(uname -m)" "flatpak run --command=qemu-system-$(uname -m) org.virt_manager.virt-manager")}"
 QEMU_RUNNER_TPM2="${QEMU_RUNNER_TPM2:-}"
@@ -241,7 +241,7 @@ while :; do
       ;;
     *)
       if [ -n "$1" ]; then
-        QEMU_RUNNER_IMAGE_FILE="$1"
+        QEMU_RUNNER_IMAGE_FILES+=("$1")
         shift
       else
       	break
@@ -325,13 +325,19 @@ if [ -n "${QEMU_RUNNER_ISO_FILE}" ] ; then
   )
 fi
 
-if [ -n "${QEMU_RUNNER_IMAGE_FILE}" ] ; then
-  FILETYPE="$(sed "s/img/raw/g" <<< "${QEMU_RUNNER_IMAGE_FILE##*.}")"
+if [ -n "${QEMU_RUNNER_IMAGE_FILES[*]}" ] ; then
   IMAGE_FILE_ARGUMENTS=(
     "-device" "virtio-scsi-pci,id=scsi"
-    "-device" "scsi-hd,drive=hd"
-    "-drive" "if=none,id=hd,file=${QEMU_RUNNER_IMAGE_FILE},media=disk,snapshot=off,format=${FILETYPE}"
   )
+  HD_NUMBER=1
+  for IMAGE_FILE in "${QEMU_RUNNER_IMAGE_FILES[@]}" ; do
+    FILETYPE="$(sed "s/img/raw/" <<< "$(cut -d. -f2 <<< "$IMAGE_FILE")")"
+    IMAGE_FILE_ARGUMENTS+=(
+      "-device" "scsi-hd,drive=hd${HD_NUMBER}"
+      "-drive" "if=none,id=hd${HD_NUMBER},file=${IMAGE_FILE},media=disk,snapshot=off,format=${FILETYPE}"
+    )
+    HD_NUMBER=$(( HD_NUMBER + 1))
+  done
 fi
 
 if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
