@@ -54,6 +54,20 @@ The virt-manager flatpak doesn't currently expose the pipewire socket, so if you
 flatpak override org.virt_manager.virt-manager --filesystem=xdg-run/pipewire-0:ro
 ```
 
+### TPM2
+
+For temporary TPM2 directories you'll need access to `/tmp` from the flatpak
+
+```bash
+flatpak override org.virt_manager.virt-manager --filesystem=/tmp
+```
+
+For persistent TPM2, add access to `.local/share/vmbuddy`
+
+```bash
+flatpak override org.virt_manager.virt-manager --filesystem=xdg-data/vmbuddy:rw
+```
+
 ## Final note
 
 This is maintained and used primarily on x86_64, virtualizing other x86_64 systems. A few things may not work well when _not_ on those architectures right now. Please make bug reports for those!
