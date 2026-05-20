@@ -295,6 +295,7 @@ if [ "${QEMU_RUNNER_TPM2}" == "1" ] ; then
     --create-platform-cert \
     --create-spk \
     --tpm2 \
+    --create-config-files \
     --overwrite &>/dev/null ; then
     echo "Failed setting up TPM state, setting to temporary directory."
     QEMU_RUNNER_TPM_STATE_DIR="$(mktemp -d)"
@@ -303,6 +304,7 @@ if [ "${QEMU_RUNNER_TPM2}" == "1" ] ; then
       --create-platform-cert \
       --create-spk \
       --tpm2 \
+      --create-config-files \
       --overwrite &>/dev/null
   fi
 
