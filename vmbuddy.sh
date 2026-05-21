@@ -290,22 +290,20 @@ if [ "${QEMU_RUNNER_TPM2}" == "1" ] ; then
   pkill swtpm_setup || true
 
   mkdir -p "${QEMU_RUNNER_TPM_STATE_DIR}"
-  if ! ${QEMU_RUNNER_SWTPM_SETUP_BINARY} --tpmstate "${QEMU_RUNNER_TPM_STATE_DIR}" \
-    --create-ek-cert \
-    --create-platform-cert \
-    --create-spk \
-    --tpm2 \
-    --create-config-files \
-    --overwrite &>/dev/null ; then
+  SWTPM_ARGS=(
+    "--tpmstate" "${QEMU_RUNNER_TPM_STATE_DIR}"
+    "--create-ek-cert"
+    "--create-platform-cert"
+    "--create-spk"
+    "--tpm2"
+    "--create-config-files"
+    "overwrite"
+  )
+  if ! ${QEMU_RUNNER_SWTPM_SETUP_BINARY} "${SWTPM_ARGS[@]}" >/dev/null \
+; then
     echo "Failed setting up TPM state, setting to temporary directory."
     QEMU_RUNNER_TPM_STATE_DIR="$(mktemp -d)"
-    ${QEMU_RUNNER_SWTPM_SETUP_BINARY} --tpmstate "${QEMU_RUNNER_TPM_STATE_DIR}" \
-      --create-ek-cert \
-      --create-platform-cert \
-      --create-spk \
-      --tpm2 \
-      --create-config-files \
-      --overwrite &>/dev/null
+    ${QEMU_RUNNER_SWTPM_SETUP_BINARY} "${SWTPM_ARGS[@]}" >/dev/null
   fi
 
   ${QEMU_RUNNER_SWTPM_BINARY} socket --tpmstate "dir=${QEMU_RUNNER_TPM_STATE_DIR}" \
