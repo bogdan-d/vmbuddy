@@ -40,14 +40,16 @@ Options:
 	--uefi-binary/-u:		QEMU UEFI binary to be used (i.e.: /path/to/edk2)
 	--machine-type/--machine/-m:	Firmware used to boot the virtual machine (uefi/bios)
 	--acceleration-type/--accel/-a:	Method for GPU acceleration on the virtual machine (native-drm/venus/virgl/none)
-	--display/-d:			QEMU display type (sdl/gtk/curses)
+	--display/-d:			QEMU display type (sdl/gtk/console/none)
 	--ram/-r:			RAM to be allocated to the virtual machine (i.e. 8G, 400M)
 	--cpu/-c:			Virtual CPUs to be allocated to the virtual machine (i.e. 8)
 	--iso/-i:			ISO file to be mounted (and booted) to the virtual machine (/path/to/iso)
 	--audio-type/--audio:		Type of audio device to be allocated to the VM (pipewire/pulseaudio/ich9/none)
 	--dry-run:			Only print the QEMU command generated
 	--flatpak/-f:			Run with QEMU flatpak
-	--tpm/-t:			Launch with TPM2 software emulation
+	--no-vsock:			Launch without VSock integration
+	--vsock-cid:			ID for vsock socket (default: random number)
+	--no-tpm:			Launch without TPM2 software emulation
 	--tpm-swtpm-binary:		Binary to be used for swtpm (i.e.: swtpm)
 	--tpm-swtpm-setup-binary:	Binary to be used for swtpm_setup (i.e.: swtpm_setup)
 	--tpm-state-dir:		Directory to be used to store TPM2 state (default: ${XDG_DATA_DIR:-${HOME}/.local/share}/vmbuddy/tpmstate)
@@ -82,10 +84,12 @@ QEMU_RUNNER_ISO_FILE="${QEMU_RUNNER_ISO_FILE:-}"
 QEMU_RUNNER_IMAGE_FILES=( ${QEMU_RUNNER_IMAGE_FILES} )
 VMBUDDY_AUTODETECT_QEMU="${VMBUDDY_AUTODETECT_QEMU:-1}"
 QEMU_RUNNER_BINARY="${QEMU_RUNNER_BINARY:-$(system_or_fallback "qemu-system-$(uname -m)" "flatpak run --command=qemu-system-$(uname -m) org.virt_manager.virt-manager")}"
-QEMU_RUNNER_TPM2="${QEMU_RUNNER_TPM2:-}"
+QEMU_RUNNER_TPM2="${QEMU_RUNNER_TPM2:-1}"
 QEMU_RUNNER_TPM_STATE_DIR="${QEMU_RUNNER_TPM_STATE_DIR:-${XDG_DATA_DIR:-$HOME/.local/share}/vmbuddy/tpmstate}"
 QEMU_RUNNER_SWTPM_BINARY="${QEMU_RUNNER_SWTPM_BINARY:-$(system_or_fallback "swtpm" "flatpak run --command=swtpm org.virt_manager.virt-manager")}"
 QEMU_RUNNER_SWTPM_SETUP_BINARY="${QEMU_RUNNER_SWTPM_SETUP_BINARY:-$(system_or_fallback "swtpm_setup" "flatpak run --command=swtpm_setup org.virt_manager.virt-manager")}"
+QEMU_RUNNER_VSOCK="${QEMU_RUNNER_VSOCK:-1}"
+QEMU_RUNNER_VSOCK_CID="${QEMU_RUNNER_VSOCK_CID:-$(seq 1 9 | shuf | tr -d '\n')}"
 
 # We want to use flathub whenever possible, but if the system stack is available then use that
 if [ "${VMBUDDY_AUTODETECT_QEMU}" == "1" ] && command -v "qemu-system-$(uname -m)" &>/dev/null && [ -e "/usr/share/edk2/ovmf/OVMF_CODE_4M.qcow2" ] ; then
@@ -101,9 +105,13 @@ while :; do
       QEMU_RUNNER_BINARY="flatpak run --command=qemu-system-$(uname -m) org.virt_manager.virt-manager"
       QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-$(uname -m)-code.fd"
       ;;
-    -t | --tpm)
+    --no-tpm)
       shift
-      QEMU_RUNNER_TPM2="1"
+      QEMU_RUNNER_TPM2="0"
+      ;;
+    --no-vsock)
+      shift
+      QEMU_RUNNER_VSOCK="0"
       ;;
     --tpm-swtpm-binary)
       if [ -n "$2" ]; then
@@ -117,6 +125,15 @@ while :; do
     --tpm-swtpm-setup-binary)
       if [ -n "$2" ]; then
         QEMU_RUNNER_SWTPM_SETUP_BINARY="${2}"
+        shift
+        shift
+      else
+        invalid_args_die
+      fi
+      ;;
+    --vsock-cid)
+      if [ -n "$2" ]; then
+        QEMU_RUNNER_VSOCK_CID="${QEMU_RUNNER_VSOCK_CID:-$2}"
         shift
         shift
       else
@@ -185,7 +202,7 @@ while :; do
     -d | --display)
       if [ -n "$2" ]; then
         QEMU_RUNNER_DISPLAY_TYPE="${2}"
-        invalid_args_check "${2}" "sdl" "gtk" "none"
+        invalid_args_check "${2}" "sdl" "gtk" "console" "none"
         shift
         shift
       else
@@ -251,10 +268,31 @@ while :; do
   esac
 done
 
+if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "console" ] ; then
+  if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" != "none" ]  ; then
+    printf "%s" "Acceleration type must be none when console display type is selected" 2>&1
+    exit 1
+  fi
+  if [ "${QEMU_RUNNER_AUDIO_TYPE}" != "none" ]  ; then
+    printf "%s" "Audio type must be none when console display type is selected" 2>&1
+    exit 1
+  fi
+
+  DISPLAY_ARGUMENTS=(
+    "-nodefaults"
+    "-nographic"
+    "-chardev" "stdio,mux=on,id=console,signal=off"
+    "-device" "virtio-serial-pci,id=mkosi-virtio-serial-pci"
+    "-device" "virtconsole,chardev=console"
+    "-mon" "console"
+  )
+fi 
+
 QEMU_DISPLAY_STRING=""
 if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "gtk" ] ; then
   QEMU_DISPLAY_STRING="gtk,show-tabs=on,show-menubar=on,window-close=on,show-cursor=off"
 fi 
+
 if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "sdl" ] ; then
   QEMU_DISPLAY_STRING="sdl,window-close=on,show-cursor=off"
 fi 
@@ -340,10 +378,11 @@ if [ -n "${QEMU_RUNNER_IMAGE_FILES[*]}" ] ; then
   )
   HD_NUMBER=1
   for IMAGE_FILE in "${QEMU_RUNNER_IMAGE_FILES[@]}" ; do
-    FILETYPE="$(sed "s/img/raw/" <<< "${IMAGE_FILE##*.}")"
+    FILETYPE="${IMAGE_FILE##*.}"
+    FILETYPE="${FILETYPE//img/raw}"
     IMAGE_FILE_ARGUMENTS+=(
       "-device" "scsi-hd,drive=hd${HD_NUMBER}"
-      "-drive" "if=none,id=hd${HD_NUMBER},file=${IMAGE_FILE},media=disk,snapshot=off,format=${FILETYPE}"
+      "-drive" "if=none,id=hd${HD_NUMBER},media=disk,snapshot=off,format=${FILETYPE},discard=unmap,file.driver=file,file.filename=${IMAGE_FILE},cache.direct=yes,cache.no-flush=yes"
     )
     HD_NUMBER=$(( HD_NUMBER + 1))
   done
@@ -358,7 +397,6 @@ if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "ich9" ] ; then
     "-global" "ICH9-LPC.noreboot=off"
   )
 fi
-
 
 if [ "${QEMU_RUNNER_AUDIO_TYPE}" == "pipewire" ] ; then
   AUDIO_ARGUMENTS=(
@@ -379,9 +417,14 @@ if [ "${QEMU_RUNNER_MACHINE_TYPE}" == "uefi" ] ; then
   MACHINE_ARGUMENTS=(
     "${MACHINE_ARGUMENTS[@]}"
     "-drive" "if=pflash,format=raw,readonly=on,file=${QEMU_RUNNER_UEFI_BINARY}"
+    "-global" "driver=cfi.pflash01,property=secure,value=on"
   )
 fi
 
+if [ "${QEMU_RUNNER_VSOCK}" == "1" ] ; then 
+  VSOCK_ARGUMENTS=("-device" "vhost-vsock-pci,guest-cid=${QEMU_RUNNER_VSOCK_CID}")
+  echo "INFO: Use ssh vsock%${QEMU_RUNNER_VSOCK_CID} to connect to this VM's ssh server from the host"
+fi
 
 exec ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -enable-kvm \
@@ -391,12 +434,11 @@ exec ${DRY_RUN_ARGUMENTS} ${QEMU_RUNNER_BINARY} \
   -rtc base=utc,driftfix=slew \
   -m "${QEMU_RUNNER_RAM}" \
   -smp "${QEMU_RUNNER_CPUS}" \
-  -net user \
-  -net nic,model=virtio \
   -device "vmgenid,guid=$(uuidgen)" \
   -object rng-random,filename=/dev/urandom,id=rng0 \
   -device virtio-rng-pci,rng=rng0,id=rng-device0 \
   -device virtio-balloon,free-page-reporting=on \
+  "${VSOCK_ARGUMENTS[@]}" \
   "${TPM2_ARGUMENTS[@]}" \
   "${AUDIO_ARGUMENTS[@]}" \
   "${MACHINE_ARGUMENTS[@]}" \
