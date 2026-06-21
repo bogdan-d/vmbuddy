@@ -185,6 +185,7 @@ while :; do
     -d | --display)
       if [ -n "$2" ]; then
         QEMU_RUNNER_DISPLAY_TYPE="${2}"
+        invalid_args_check "${2}" "sdl" "gtk" "none"
         shift
         shift
       else
@@ -250,6 +251,14 @@ while :; do
   esac
 done
 
+QEMU_DISPLAY_STRING=""
+if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "gtk" ] ; then
+  QEMU_DISPLAY_STRING="gtk,show-tabs=on,show-menubar=on,window-close=on,show-cursor=off"
+fi 
+if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "sdl" ] ; then
+  QEMU_DISPLAY_STRING="sdl,window-close=on,show-cursor=off"
+fi 
+
 if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "" ] || [ -z "${QEMU_RUNNER_ACCELERATION_TYPE}" ] ; then
   DISPLAY_ARGUMENTS=("-display" "${QEMU_RUNNER_DISPLAY_TYPE:-gtk}")
 fi
@@ -257,7 +266,7 @@ fi
 if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "virgl" ] ; then
   VIRGL_ARGUMENTS=(
     "-vga" "virtio"
-    "-display" "gtk,gl=on"
+    "-display" "${QEMU_DISPLAY_STRING},gl=on"
   )
 fi
 
@@ -266,7 +275,7 @@ SANDBOX_ARGUMENTS=(
 )
 if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "venus" ] || [ "${QEMU_RUNNER_ACCELERATION_TYPE}" == "native-drm" ] ; then
   VENUS_ARGUMENTS=(
-    "-display" "${QEMU_RUNNER_DISPLAY_TYPE:-gtk},gl=on,show-cursor=off"
+    "-display" "${QEMU_DISPLAY_STRING},gl=on"
     "-object" "memory-backend-memfd,id=mem1,size=${QEMU_RUNNER_RAM}"
     "-machine" "memory-backend=mem1"
     "-vga" "none"
