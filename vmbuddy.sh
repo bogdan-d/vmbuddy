@@ -147,7 +147,7 @@ while :; do
       ;;
     --vsock-cid)
       if [ -n "$2" ]; then
-        QEMU_RUNNER_VSOCK_CID="${QEMU_RUNNER_VSOCK_CID:-$2}"
+        QEMU_RUNNER_VSOCK_CID="${2}"
         shift
         shift
       else
@@ -339,10 +339,10 @@ for VOLUME_STATEMENT in "${QEMU_RUNNER_VOLUMES[@]}" ; do
   )
 done
 
-NETWORK_ARGUMENTS=()
+NETWORK_ARGUMENTS=( "-nic" "none" )
 if [ "${QEMU_RUNNER_NETWORK}" == "1" ] ; then
   NETWORK_ARGUMENTS=(
-    "-net" "nic,model=virtio"
+    "-net" "nic,model=virtio-net-pci"
   )
 
   for PORT_STATEMENT in "${QEMU_RUNNER_PORTS[@]}" ; do
@@ -361,19 +361,19 @@ fi
 
 if [ "${QEMU_RUNNER_DISPLAY_TYPE}" == "console" ] ; then
   if [ "${QEMU_RUNNER_ACCELERATION_TYPE}" != "none" ]  ; then
-    printf "%s" "Acceleration type must be none when console display type is selected" 2>&1
-    exit 1
+    printf "%s\n" "INFO: Disabling video acceleration because display mode is console"
+    QEMU_RUNNER_ACCELERATION_TYPE="none"
   fi
   if [ "${QEMU_RUNNER_AUDIO_TYPE}" != "none" ]  ; then
-    printf "%s" "Audio type must be none when console display type is selected" 2>&1
-    exit 1
+    printf "%s\n" "INFO: Disabling audio output because display mode is console"
+    QEMU_RUNNER_AUDIO_TYPE="none"
   fi
 
   DISPLAY_ARGUMENTS=(
-    "-nodefaults"
     "-nographic"
+    "-nodefaults"
     "-chardev" "stdio,mux=on,id=console,signal=off"
-    "-device" "virtio-serial-pci,id=mkosi-virtio-serial-pci"
+    "-device" "virtio-serial-pci,id=vmbuddy-virtio-serial-pci"
     "-device" "virtconsole,chardev=console"
     "-mon" "console"
   )
