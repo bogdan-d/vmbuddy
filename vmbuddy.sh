@@ -5,7 +5,7 @@ VMBUDDY_BINARY_NAME="vmbuddy"
 set -eo pipefail
 
 invalid_args_die() {
-  printf >&2 "%s" "ERROR: Invalid number of arguments"
+  printf >&2 "%s" "ERROR: Invalid number of arguments\n"
   exit 1
 }
 
@@ -18,7 +18,7 @@ invalid_args_check() {
   done
 
   if [ "${INVALID}" == 1 ] ; then
-    printf >&2 "%s" "ERROR: Invalid argument specified for flag, expected: ${*}"
+    printf >&2 "%s" "ERROR: Invalid argument specified for flag, expected: ${*}\n"
     exit 1
   fi
 }
@@ -116,7 +116,6 @@ while :; do
       shift
       QEMU_RUNNER_BINARY="flatpak run --command=qemu-system-${QEMU_RUNNER_ARCHITECTURE} org.virt_manager.virt-manager"
       QEMU_RUNNER_UEFI_BINARY="/app/lib/extensions/Qemu/share/qemu/edk2-${QEMU_RUNNER_ARCHITECTURE}-code.fd"
-      invalid_args_check "${2}" "x86" "x86_64" "aarch64" # No support for anything else currently
       ;;
     --no-tpm)
       shift
@@ -141,6 +140,7 @@ while :; do
       ;;
     --arch | --architecture)
       if [ -n "$2" ]; then
+        invalid_args_check "${2}" "x86" "x86_64" "aarch64" # No support for anything else currently
         QEMU_RUNNER_ARCHITECTURE="${2}"
         QEMU_RUNNER_BINARY="$(system_or_fallback "qemu-system-${QEMU_RUNNER_ARCHITECTURE}" "flatpak run --command=qemu-system-${QEMU_RUNNER_ARCHITECTURE} org.virt_manager.virt-manager")"
         shift
